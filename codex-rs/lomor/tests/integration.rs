@@ -169,7 +169,7 @@ async fn responses_api_streams_required_events() {
     for &ev in required {
         assert!(
             event_types.contains(ev),
-            "missing required SSE event type: {ev}"
+            "missing required SSE event type: {ev}\ngot: {event_types:?}"
         );
     }
 
@@ -273,25 +273,58 @@ async fn get_model(client: &reqwest::Client) -> String {
     "qwen3.6-35b-smart".to_owned()
 }
 
-/// Extracts all `event: <type>` lines from a raw SSE response body.
-fn parse_sse_event_types(raw: &str) -> HashSet<&str> {
-    raw.lines()
-        .filter_map(|line| line.strip_prefix("event: "))
-        .collect()
+/// Extracts all event type strings from a raw SSE response body.
+///
+/// Handles both the W3C named-event form (`event: response.created`) and the
+/// lomor form where the type is embedded in the JSON data field
+/// (`data: {"type":"response.created",...}`).
+fn parse_sse_event_types(raw: &str) -> HashSet<String> {
+    let mut types = HashSet::new();
+
+    for line in raw.lines() {
+        // W3C named-event line.
+        if let Some(ev) = line.strip_prefix("event: ") {
+            types.insert(ev.trim().to_owned());
+            continue;
+        }
+
+        // JSON data line — extract the "type" field value.
+        if let Some(json_str) = line.strip_prefix("data: ") {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(json_str) {
+                if let Some(t) = v.get("type").and_then(|t| t.as_str()) {
+                    types.insert(t.to_owned());
+                }
+            }
+        }
+    }
+
+    types
 }
 
 // ── Unit tests (always run) ────────────────────────────────────────────────────
 
 #[test]
-fn parse_sse_event_types_extracts_all_types() {
+fn parse_sse_event_types_extracts_named_event_lines() {
     let raw = "event: response.created\ndata: {}\n\n\
                event: response.output_text.delta\ndata: {}\n\n\
                event: response.completed\ndata: {}\n\n";
     let types = parse_sse_event_types(raw);
-    assert!(types.contains("response.created"));
-    assert!(types.contains("response.output_text.delta"));
-    assert!(types.contains("response.completed"));
+    assert!(types.contains("response.created"), "{types:?}");
+    assert!(types.contains("response.output_text.delta"), "{types:?}");
+    assert!(types.contains("response.completed"), "{types:?}");
     assert!(!types.contains("bogus"));
+}
+
+#[test]
+fn parse_sse_event_types_extracts_json_data_types() {
+    // lomor format: type embedded in the JSON data field.
+    let raw = "data: {\"type\":\"response.created\",\"response\":{}}\n\n\
+               data: {\"type\":\"response.output_text.delta\",\"delta\":\"hi\"}\n\n\
+               data: {\"type\":\"response.completed\"}\n\n";
+    let types = parse_sse_event_types(raw);
+    assert!(types.contains("response.created"), "{types:?}");
+    assert!(types.contains("response.output_text.delta"), "{types:?}");
+    assert!(types.contains("response.completed"), "{types:?}");
 }
 
 #[test]
