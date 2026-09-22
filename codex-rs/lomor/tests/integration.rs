@@ -188,6 +188,67 @@ async fn responses_api_streams_required_events() {
     );
 }
 
+/// Verifies that `POST /v1/responses` with a `"developer"` role message works.
+///
+/// codex sends developer-context messages with role `"developer"` (the OpenAI
+/// Responses API equivalent of a system prompt).  This was a production bug:
+/// lomord's Qwen3 chat template rejected `"developer"` as an unknown role.
+/// The fix maps `"developer"` → `"system"` before template rendering.
+#[tokio::test]
+async fn responses_api_accepts_developer_role() {
+    if !integration_enabled() {
+        return;
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .expect("client build");
+
+    let model = get_model(&client).await;
+
+    let body = serde_json::json!({
+        "model": model,
+        "input": [
+            {
+                "type": "message",
+                "role": "developer",
+                "content": "You are a test assistant. Be as brief as possible."
+            },
+            {
+                "type": "message",
+                "role": "user",
+                "content": "Reply with the single word: OK"
+            }
+        ],
+        "stream": true
+    });
+
+    let resp = client
+        .post(format!("{LOMOR_BASE}/v1/responses"))
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .expect("POST /v1/responses");
+
+    assert!(
+        resp.status().is_success(),
+        "POST /v1/responses with developer role returned {}: \
+         lomord must map developer → system before chat template",
+        resp.status()
+    );
+
+    let raw = String::from_utf8_lossy(&resp.bytes().await.expect("read body")).into_owned();
+    eprintln!("--- developer-role SSE ---\n{raw}\n--- end ---");
+
+    let event_types = parse_sse_event_types(&raw);
+    assert!(
+        event_types.contains("response.completed"),
+        "expected response.completed event; got: {event_types:?}"
+    );
+}
+
 /// Verifies that `POST /v1/responses` with an empty `input` array returns 400.
 #[tokio::test]
 async fn responses_api_rejects_empty_input() {
