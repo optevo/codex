@@ -48,8 +48,12 @@ pub mod uds;
 /// 2. Spawns `lomord start` as a detached background process.
 /// 3. Polls `/health` every 2 seconds for up to 120 seconds.
 ///
-/// The 120-second timeout accommodates cold model loading: Qwen3.6-35B on an
-/// M5 Max takes approximately 30–60 seconds to load weights from NVMe.
+/// Model weights are memory-mapped at startup (`newBufferWithBytesNoCopy`) —
+/// pages are not read from NVMe until Metal first accesses each region.
+/// Startup itself is fast (a few seconds); the first inference request bears
+/// the page-fault cost as weight pages load on demand from NVMe.
+/// The 120-second ceiling is conservative insurance against unexpected
+/// startup failures, not an expected load time.
 ///
 /// # Errors
 ///
