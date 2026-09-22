@@ -3777,8 +3777,11 @@ dependencies = [
  "codex-model-provider-info",
  "lomor-data",
  "lomor-ipc",
+ "reqwest 0.12.28",
  "thiserror 2.0.18",
  "tokio",
+ "tracing",
+ "which 8.0.0",
 ]
 
 [[package]]
@@ -4963,6 +4966,7 @@ version = "0.0.0"
 dependencies = [
  "codex-core",
  "codex-lmstudio",
+ "codex-lomor",
  "codex-model-provider-info",
  "codex-ollama",
 ]

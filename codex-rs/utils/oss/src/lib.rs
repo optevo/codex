@@ -2,6 +2,7 @@
 
 use codex_core::config::Config;
 use codex_model_provider_info::LMSTUDIO_OSS_PROVIDER_ID;
+use codex_model_provider_info::LOMOR_OSS_PROVIDER_ID;
 use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 
 /// Returns the default model for a given OSS provider.
@@ -30,6 +31,11 @@ pub async fn ensure_oss_provider_ready(
             codex_ollama::ensure_oss_ready(config, &client)
                 .await
                 .map_err(|e| std::io::Error::other(format!("OSS setup failed: {e}")))?;
+        }
+        LOMOR_OSS_PROVIDER_ID => {
+            codex_lomor::ensure_oss_ready()
+                .await
+                .map_err(|e| std::io::Error::other(format!("lomor startup failed: {e}")))?;
         }
         _ => {
             // Unknown provider, skip setup

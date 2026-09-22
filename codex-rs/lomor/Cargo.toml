@@ -17,10 +17,15 @@ default = []
 # Native UDS transport — connects directly to a running lomord process via
 # /tmp/lomord.sock using bincode-framed Unix sockets. No HTTP overhead, no
 # JSON serialisation, no MLX/Metal stack required.
-uds = ["dep:lomor-ipc", "dep:lomor-data", "dep:tokio", "dep:thiserror"]
+uds = ["dep:lomor-ipc", "dep:lomor-data", "dep:thiserror"]
 
 [dependencies]
 codex-model-provider-info = { workspace = true }
+# Used by ensure_oss_ready: health probe and process lifecycle.
+reqwest = { workspace = true, features = ["json"] }
+tokio = { workspace = true, features = ["net", "io-util", "time", "rt"] }
+tracing = { workspace = true }
+which = { workspace = true }
 
 # UDS feature deps — lightweight, no model-loading code.
 [dependencies.lomor-ipc]
@@ -30,11 +35,6 @@ optional = true
 [dependencies.lomor-data]
 path = "/Users/rd/projects/lomor/lomor-data"
 optional = true
-
-[dependencies.tokio]
-workspace = true
-optional = true
-features = ["net", "io-util"]
 
 [dependencies.thiserror]
 workspace = true
