@@ -39,3 +39,11 @@ optional = true
 [dependencies.thiserror]
 workspace = true
 optional = true
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
