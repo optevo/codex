@@ -81,7 +81,8 @@ pub struct Cli {
     pub no_alt_screen: bool,
 
     /// Run without the shared background server, even if it is already running.
-    #[arg(long)]
+    /// Defaults to true for source builds (no codex-package.json installer).
+    #[arg(long, default_value_t = true)]
     pub no_daemon: bool,
 
     #[clap(skip)]
