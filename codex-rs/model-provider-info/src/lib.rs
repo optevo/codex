@@ -634,9 +634,11 @@ other non-default provider fields are not supported"
 }
 
 pub const DEFAULT_LMSTUDIO_PORT: u16 = 1234;
+pub const DEFAULT_LOMOR_PORT: u16 = 8080;
 pub const DEFAULT_OLLAMA_PORT: u16 = 11434;
 
 pub const LMSTUDIO_OSS_PROVIDER_ID: &str = "lmstudio";
+pub const LOMOR_OSS_PROVIDER_ID: &str = "lomor";
 pub const OLLAMA_OSS_PROVIDER_ID: &str = "ollama";
 
 /// Built-in default provider list.
@@ -667,6 +669,10 @@ pub fn built_in_model_providers(
         (
             LMSTUDIO_OSS_PROVIDER_ID,
             create_oss_provider(DEFAULT_LMSTUDIO_PORT, WireApi::Responses),
+        ),
+        (
+            LOMOR_OSS_PROVIDER_ID,
+            create_oss_provider(DEFAULT_LOMOR_PORT, WireApi::Responses),
         ),
     ]
     .into_iter()

@@ -1,0 +1,41 @@
+[package]
+name = "codex-lomor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "codex_lomor"
+path = "src/lib.rs"
+doctest = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# Native UDS transport — connects directly to a running lomord process via
+# /tmp/lomord.sock using bincode-framed Unix sockets. No HTTP overhead, no
+# JSON serialisation, no MLX/Metal stack required.
+uds = ["dep:lomor-ipc", "dep:lomor-data", "dep:tokio", "dep:thiserror"]
+
+[dependencies]
+codex-model-provider-info = { workspace = true }
+
+# UDS feature deps — lightweight, no model-loading code.
+[dependencies.lomor-ipc]
+path = "/Users/rd/projects/lomor/lomor-ipc"
+optional = true
+
+[dependencies.lomor-data]
+path = "/Users/rd/projects/lomor/lomor-data"
+optional = true
+
+[dependencies.tokio]
+workspace = true
+optional = true
+features = ["net", "io-util"]
+
+[dependencies.thiserror]
+workspace = true
+optional = true

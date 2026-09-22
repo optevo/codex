@@ -79,6 +79,7 @@ members = [
     "file-watcher",
     "linux-sandbox",
     "lmstudio",
+    "lomor",
     "login",
     "codex-mcp",
     "memories/read",
@@ -236,6 +237,7 @@ codex-history = { path = "history" }
 codex-keyring-store = { path = "keyring-store" }
 codex-linux-sandbox = { path = "linux-sandbox" }
 codex-lmstudio = { path = "lmstudio" }
+codex-lomor = { path = "lomor" }
 codex-login = { path = "login" }
 codex-mermaid = { path = "mermaid" }
 codex-message-history = { path = "message-history" }
