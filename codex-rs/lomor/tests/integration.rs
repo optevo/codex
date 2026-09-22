@@ -249,6 +249,291 @@ async fn responses_api_accepts_developer_role() {
     );
 }
 
+/// Verifies that `POST /v1/responses` with both `instructions` and a
+/// `"developer"` role message completes successfully.
+///
+/// This is the regression test for a two-bug sequence:
+///
+/// 1. The `"developer"` role was rejected by Qwen3's chat template (fixed by
+///    mapping it to `"system"`).
+/// 2. When both `instructions` and a developer message are present, two
+///    separate system messages were emitted, triggering Qwen3's chat template
+///    "System message must be at the beginning" error.  The fix merges all
+///    system content (instructions + developer messages) into a single leading
+///    system message.
+///
+/// codex almost always sends both fields: `instructions` carries the hardcoded
+/// system prompt and `input` contains a `developer` role message from the
+/// context builder.
+#[tokio::test]
+async fn responses_api_merges_instructions_and_developer_role() {
+    if !integration_enabled() {
+        return;
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .expect("client build");
+
+    let model = get_model(&client).await;
+
+    let body = serde_json::json!({
+        "model": model,
+        "instructions": "You are a test assistant.",
+        "input": [
+            {
+                "type": "message",
+                "role": "developer",
+                "content": "Be as brief as possible."
+            },
+            {
+                "type": "message",
+                "role": "user",
+                "content": "Reply with the single word: OK"
+            }
+        ],
+        "stream": true
+    });
+
+    let resp = client
+        .post(format!("{LOMOR_BASE}/v1/responses"))
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .expect("POST /v1/responses");
+
+    assert!(
+        resp.status().is_success(),
+        "POST /v1/responses with instructions + developer role returned {}: \
+         lomord must merge both into a single system message",
+        resp.status()
+    );
+
+    let raw = String::from_utf8_lossy(&resp.bytes().await.expect("read body")).into_owned();
+    eprintln!("--- instructions+developer SSE ---\n{raw}\n--- end ---");
+
+    let event_types = parse_sse_event_types(&raw);
+    assert!(
+        event_types.contains("response.completed"),
+        "expected response.completed; got: {event_types:?}"
+    );
+}
+
+/// Verifies that a multi-turn conversation (user → assistant → user) streams
+/// successfully.
+///
+/// codex sends prior conversation turns as message items when continuing a
+/// session.  This test ensures that the assistant-role message from a prior
+/// turn is threaded into the chat history correctly and the model can respond
+/// to the follow-up.
+#[tokio::test]
+async fn responses_api_handles_multi_turn_conversation() {
+    if !integration_enabled() {
+        return;
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .expect("client build");
+
+    let model = get_model(&client).await;
+
+    let body = serde_json::json!({
+        "model": model,
+        "instructions": "You are a test assistant. Be as brief as possible.",
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": "Say the word ALPHA."
+            },
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": "ALPHA"
+            },
+            {
+                "type": "message",
+                "role": "user",
+                "content": "Now say the word BETA."
+            }
+        ],
+        "stream": true
+    });
+
+    let resp = client
+        .post(format!("{LOMOR_BASE}/v1/responses"))
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .expect("POST /v1/responses");
+
+    assert!(
+        resp.status().is_success(),
+        "multi-turn POST /v1/responses returned {}",
+        resp.status()
+    );
+
+    let raw = String::from_utf8_lossy(&resp.bytes().await.expect("read body")).into_owned();
+    eprintln!("--- multi-turn SSE ---\n{raw}\n--- end ---");
+
+    let event_types = parse_sse_event_types(&raw);
+    assert!(
+        event_types.contains("response.completed"),
+        "expected response.completed; got: {event_types:?}"
+    );
+    assert!(
+        raw.contains("\"delta\""),
+        "expected at least one output_text.delta with text"
+    );
+}
+
+/// Verifies that the codex-native extra fields (`tool_choice`,
+/// `parallel_tool_calls`, `store`, `include`, `reasoning`) are silently
+/// ignored by lomord and do not cause a 400 error.
+///
+/// codex serialises its full `ResponsesApiRequest` struct, which includes many
+/// fields that lomord does not use.  A strict deserialiser that rejects unknown
+/// fields would break every codex request.
+#[tokio::test]
+async fn responses_api_tolerates_extra_codex_fields() {
+    if !integration_enabled() {
+        return;
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .expect("client build");
+
+    let model = get_model(&client).await;
+
+    // Send the full set of fields that codex serialises in a real request.
+    let body = serde_json::json!({
+        "model": model,
+        "instructions": "You are a test assistant. Be as brief as possible.",
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": "Reply with the single word: OK"
+            }
+        ],
+        "stream": true,
+        // codex-native fields that lomord should ignore:
+        "tool_choice": "auto",
+        "parallel_tool_calls": true,
+        "store": false,
+        "include": [],
+        "reasoning": null,
+        "service_tier": "auto",
+        "text": { "format": { "type": "text" } }
+    });
+
+    let resp = client
+        .post(format!("{LOMOR_BASE}/v1/responses"))
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .expect("POST /v1/responses");
+
+    assert!(
+        resp.status().is_success(),
+        "POST /v1/responses with extra codex fields returned {}: \
+         lomord must ignore unknown fields",
+        resp.status()
+    );
+
+    let raw = String::from_utf8_lossy(&resp.bytes().await.expect("read body")).into_owned();
+    eprintln!("--- extra-fields SSE ---\n{raw}\n--- end ---");
+
+    let event_types = parse_sse_event_types(&raw);
+    assert!(
+        event_types.contains("response.completed"),
+        "expected response.completed; got: {event_types:?}"
+    );
+}
+
+/// Verifies that `function_call` and `function_call_output` items in the input
+/// array are handled gracefully.
+///
+/// codex sends these during tool-use turns: a `function_call` item represents
+/// a prior assistant tool call, and a `function_call_output` item carries the
+/// tool result.  lomord maps these to assistant and user turns respectively so
+/// the model can see the tool exchange in its context.
+#[tokio::test]
+async fn responses_api_handles_function_call_items() {
+    if !integration_enabled() {
+        return;
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .expect("client build");
+
+    let model = get_model(&client).await;
+
+    let body = serde_json::json!({
+        "model": model,
+        "instructions": "You are a test assistant. Be as brief as possible.",
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": "What is the current date?"
+            },
+            {
+                "type": "function_call",
+                "id": "call_abc123",
+                "call_id": "call_abc123",
+                "name": "get_date",
+                "arguments": "{}"
+            },
+            {
+                "type": "function_call_output",
+                "call_id": "call_abc123",
+                "output": "2026-09-23"
+            },
+            {
+                "type": "message",
+                "role": "user",
+                "content": "Please summarise the tool result in one sentence."
+            }
+        ],
+        "stream": true
+    });
+
+    let resp = client
+        .post(format!("{LOMOR_BASE}/v1/responses"))
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .expect("POST /v1/responses");
+
+    assert!(
+        resp.status().is_success(),
+        "POST /v1/responses with function_call items returned {}: \
+         lomord must map function_call/output to assistant/user turns",
+        resp.status()
+    );
+
+    let raw = String::from_utf8_lossy(&resp.bytes().await.expect("read body")).into_owned();
+    eprintln!("--- function-call items SSE ---\n{raw}\n--- end ---");
+
+    let event_types = parse_sse_event_types(&raw);
+    assert!(
+        event_types.contains("response.completed"),
+        "expected response.completed; got: {event_types:?}"
+    );
+}
+
 /// Verifies that `POST /v1/responses` with an empty `input` array returns 400.
 #[tokio::test]
 async fn responses_api_rejects_empty_input() {
